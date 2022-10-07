@@ -61,9 +61,15 @@ describe("AaveWrapper", () => {
     // console.log(txn)
     // let rc = await txn.wait()
     // console.log(rc)
+    console.log(`Balance of DAI Before: ${await dai.balanceOf(accounts[0].address)}`)
 
     await aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, debtAmount, {gasLimit: 1e6});
     
+    console.log(`Balance of DAI After: ${await dai.balanceOf(accounts[0].address)}`)
+
+    await dai.transfer(aaveWrapper.address, debtAmount);
+
+    await aaveWrapper.connect(accounts[0]).paybackAndWithdraw(collateralToken, collateralAmount, debtToken, debtAmount);
 
   })
 })

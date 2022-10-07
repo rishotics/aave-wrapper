@@ -67,6 +67,14 @@ interface ILendingPool {
     address onBehalfOf
   ) external;
 
+
+  function repay(
+    address asset,
+    uint256 amount,
+    uint256 rateMode,
+    address onBehalfOf
+  ) external returns (uint256);
+
   
 }
 
