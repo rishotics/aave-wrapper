@@ -35,14 +35,14 @@ describe("AaveWrapper", () => {
 
     const amount = 100n * 10n ** 18n
 
-    console.log("DAI balance of whale", await dai.balanceOf(DAI_WHALE))
+    console.log("DAI balance of whale", wei2eth(await dai.balanceOf(DAI_WHALE)))
     expect(await dai.balanceOf(DAI_WHALE)).to.gte(amount)
 
     await dai.connect(whale).transfer(accounts[0].address, amount)
 
     console.log(
       "DAI balance of account",
-      await dai.balanceOf(accounts[0].address)
+      wei2eth(await dai.balanceOf(accounts[0].address))
     )
 
     weth = await ethers.getContractAt("IWETH", WETH9)
@@ -59,8 +59,6 @@ describe("AaveWrapper", () => {
         aaveWrapper = await AaveWrapper.deploy(1)
 
         await weth.deposit({ value: 10n * 10n ** 18n  })
-        let weth_balance = await weth.balanceOf(accounts[0].address);
-        console.log(`WETH amount before deposit: ${ethers.utils.formatEther(weth_balance)}`);
 
         await expect(
           aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, debtAmount)
@@ -71,11 +69,8 @@ describe("AaveWrapper", () => {
         AaveWrapper = await ethers.getContractFactory("AaveWrapper");
         aaveWrapper = await AaveWrapper.deploy(1)
 
-        await weth.deposit({ value: 10n * 10n ** 18n  })
-        let weth_balance = await weth.balanceOf(accounts[0].address);
-        console.log(`WETH amount before deposit: ${ethers.utils.formatEther(weth_balance)}`);
-
-
+        await weth.deposit({ value: 10n * 10n ** 18n  });
+      
         await weth.connect(accounts[0]).transfer(aaveWrapper.address, collateralAmount);
         let temp_debtAmount = 10000n * 10n ** 18n;
         await expect(
@@ -88,9 +83,6 @@ describe("AaveWrapper", () => {
         aaveWrapper = await AaveWrapper.deploy(1)
 
         await weth.deposit({ value: 10n * 10n ** 18n  })
-        let weth_balance = await weth.balanceOf(accounts[0].address);
-        console.log(`WETH amount before deposit: ${ethers.utils.formatEther(weth_balance)}`);
-
 
         await weth.connect(accounts[0]).transfer(aaveWrapper.address, collateralAmount);
         await aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, debtAmount, {gasLimit: 1e6});
@@ -104,9 +96,6 @@ describe("AaveWrapper", () => {
         aaveWrapper = await AaveWrapper.deploy(1)
 
         await weth.deposit({ value: 10n * 10n ** 18n  })
-        let weth_balance = await weth.balanceOf(accounts[0].address);
-        console.log(`WETH amount before deposit: ${ethers.utils.formatEther(weth_balance)}`);
-
 
         await weth.connect(accounts[0]).transfer(aaveWrapper.address, collateralAmount);
         await aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, debtAmount, {gasLimit: 1e6});
@@ -129,28 +118,28 @@ describe("AaveWrapper", () => {
 
         await weth.deposit({ value: 10n * 10n ** 18n  })
         let weth_balance = await weth.balanceOf(accounts[0].address);
-        console.log(`WETH amount before deposit: ${ethers.utils.formatEther(weth_balance)}`);
+        console.log(`WETH amount before deposit: ${wei2eth(weth_balance)}`);
 
         await weth.connect(accounts[0]).transfer(aaveWrapper.address, collateralAmount)
         
-        console.log(`Balance of DAI Before depositAndBorrow: ${await dai.balanceOf(accounts[0].address)}`)
-        console.log(`Price of DAI in ETH is: ${(await aaveWrapper.getAssetPriceInEth(DAI))}`)
+        console.log(`Balance of DAI Before depositAndBorrow: ${wei2eth(await dai.balanceOf(accounts[0].address))}`)
+        console.log(`Price of DAI in ETH is: ${wei2eth((await aaveWrapper.getAssetPriceInEth(DAI)))}`)
     
         await aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, debtAmount, {gasLimit: 1e6});
         
-        console.log(`Balance of DAI After depositAndBorrow: ${await dai.balanceOf(accounts[0].address)}`)
+        console.log(`Balance of DAI After depositAndBorrow: ${wei2eth(await dai.balanceOf(accounts[0].address))}`)
     
         debtAmount = 150n * 10n ** 18n
     
         await dai.transfer(aaveWrapper.address, debtAmount);
     
-        console.log(`Transferred dai for repaying, current balance of owner of dai: ${await dai.balanceOf(accounts[0].address)}`)
+        console.log(`Transferred dai for repaying, current balance of owner of dai: ${wei2eth(await dai.balanceOf(accounts[0].address))}`)
     
         await aaveWrapper.connect(accounts[0]).paybackAndWithdraw(collateralToken, collateralAmount, debtToken, debtAmount);
         
         weth_balance = await weth.balanceOf(accounts[0].address);
-        console.log(`WETH amount after repaying: ${ethers.utils.formatEther(weth_balance)}`);
-        console.log(`Balance of DAI After depositAndBorrow: ${await dai.balanceOf(accounts[0].address)}`)
+        console.log(`WETH amount after repaying: ${wei2eth(weth_balance)}`);
+        console.log(`Balance of DAI After depositAndBorrow: ${wei2eth(await dai.balanceOf(accounts[0].address))}`)
       })
 
       
@@ -160,7 +149,10 @@ describe("AaveWrapper", () => {
 })
 
 function wei2eth(value){
-    return ethers.utils.parseEther(value.toString())
+    return ethers.utils.formatEther(value.toString())
+}
+function eth2wei(value){
+  return ethers.utils.parseEther(value.toString())
 }
 
 

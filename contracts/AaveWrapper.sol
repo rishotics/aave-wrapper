@@ -13,6 +13,7 @@ import "hardhat/console.sol";
 /// @notice You can use this contract for making secure deposit, borrow, repay and withdrawl
 /// @dev All function calls are currently implemented without side effects
 contract AaveWrapper {
+    ///1 is for stable interest mode and 2 is for variable mode
     uint256 private interest_mode;
 
     ///Mutex variable for preveting re-entrancy
@@ -20,9 +21,15 @@ contract AaveWrapper {
 
     address owner;
 
+    ///ERROR to mark unexpected Ether payments send to Streaming contract
+    error UnexpectedETH(address sender, uint256 amount);
+
     address LENDING_POOL = 0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9;
+
     address WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+
     address PRICE_ORACLE = 0xA50ba011c48153De246E5192C8f9258A2ba79Ca9;
+
     address DATA_PROVIDER = 0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d;
 
     constructor(uint256 _interest_mode) {
@@ -30,6 +37,7 @@ contract AaveWrapper {
         owner = msg.sender;
     }
 
+    /// @notice Checks whether caller is owner
     modifier onlyOwner() {
         require(msg.sender == owner, "Not Owner");
         _;
@@ -43,10 +51,14 @@ contract AaveWrapper {
         unlocked = 1;
     }
 
+    /// @notice Change the interest rate mode
+    /// @param _interest_mode new mode
     function changeInterestMode(uint256 _interest_mode) external onlyOwner {
         interest_mode = _interest_mode;
     }
 
+    /// @notice Get the price of token in ETH terms. output is in wei
+    /// @param asset address of token
     function getAssetPriceInEth(address asset)
         public
         view
@@ -188,6 +200,9 @@ contract AaveWrapper {
         );
     }
 
+    /// @notice Console log the user state and returns imp state var
+    /// @param user address
+    /// @param state helper for logging
     function displayUserInformation(address user, string memory state)
         public
         view
@@ -242,5 +257,12 @@ contract AaveWrapper {
             success && (data.length == 0 || abi.decode(data, (bool))),
             "_safeTransfer: transfer failed"
         );
+    }
+
+    /**
+     * @notice reciever funciton to handle unexpected ether payments
+     */
+    receive() external payable {
+        revert UnexpectedETH(msg.sender, msg.value);
     }
 }
