@@ -20,6 +20,7 @@ describe("AaveWrapper", () => {
   let collateralAmount = 1n * 10n ** 18n
   let debtToken = DAI
   let debtAmount =  100n * 10n ** 18n;
+  let AaveWrapper;
 
   before(async () => {
     await network.provider.request({
@@ -46,42 +47,116 @@ describe("AaveWrapper", () => {
 
     weth = await ethers.getContractAt("IWETH", WETH9)
 
-    const AaveWrapper = await ethers.getContractFactory("AaveWrapper");
-    aaveWrapper = await AaveWrapper.deploy()
-
-    await weth.deposit({ value: collateralAmount })
-    let weth_balance = await weth.balanceOf(accounts[0].address);
-    console.log(`WETH amount before deposit: ${ethers.utils.formatEther(weth_balance)}`);
-    
-    
-
+    AaveWrapper = await ethers.getContractFactory("AaveWrapper");
+  
   })
 
-  it("unlock account", async () => {
+    describe("#reverts", function () {
 
-    await weth.connect(accounts[0]).transfer(aaveWrapper.address, collateralAmount)
+      it("should fail when collateral not trasffered", async function () {
+        
+        AaveWrapper = await ethers.getContractFactory("AaveWrapper");
+        aaveWrapper = await AaveWrapper.deploy(1)
+
+        await weth.deposit({ value: 10n * 10n ** 18n  })
+        let weth_balance = await weth.balanceOf(accounts[0].address);
+        console.log(`WETH amount before deposit: ${ethers.utils.formatEther(weth_balance)}`);
+
+        await expect(
+          aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, debtAmount)
+        ).to.be.revertedWith("depositAndBorrow: Non-sufficient collateral");
+      });
+
+      it("should fail when debt amount is grater than allowed limit of borrow", async function () {
+        AaveWrapper = await ethers.getContractFactory("AaveWrapper");
+        aaveWrapper = await AaveWrapper.deploy(1)
+
+        await weth.deposit({ value: 10n * 10n ** 18n  })
+        let weth_balance = await weth.balanceOf(accounts[0].address);
+        console.log(`WETH amount before deposit: ${ethers.utils.formatEther(weth_balance)}`);
+
+
+        await weth.connect(accounts[0]).transfer(aaveWrapper.address, collateralAmount);
+        let temp_debtAmount = 10000n * 10n ** 18n;
+        await expect(
+          aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, temp_debtAmount)
+        ).to.be.revertedWith("depositAndBorrow: Debt Token Limit crossed");
+      });
+
+      it("should fail when debt token is not sent for repay", async function () {
+        AaveWrapper = await ethers.getContractFactory("AaveWrapper");
+        aaveWrapper = await AaveWrapper.deploy(1)
+
+        await weth.deposit({ value: 10n * 10n ** 18n  })
+        let weth_balance = await weth.balanceOf(accounts[0].address);
+        console.log(`WETH amount before deposit: ${ethers.utils.formatEther(weth_balance)}`);
+
+
+        await weth.connect(accounts[0]).transfer(aaveWrapper.address, collateralAmount);
+        await aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, debtAmount, {gasLimit: 1e6});
+        await expect(
+          aaveWrapper.connect(accounts[0]).paybackAndWithdraw(collateralToken, collateralAmount, debtToken, debtAmount)
+        ).to.be.revertedWith("paybackAndWithdraw: Debt Token not sent");
+      });
+
+      it("should fail when debt token is not sent for repay", async function () {
+        AaveWrapper = await ethers.getContractFactory("AaveWrapper");
+        aaveWrapper = await AaveWrapper.deploy(1)
+
+        await weth.deposit({ value: 10n * 10n ** 18n  })
+        let weth_balance = await weth.balanceOf(accounts[0].address);
+        console.log(`WETH amount before deposit: ${ethers.utils.formatEther(weth_balance)}`);
+
+
+        await weth.connect(accounts[0]).transfer(aaveWrapper.address, collateralAmount);
+        await aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, debtAmount, {gasLimit: 1e6});
+        
+        temp_debtAmount = 1n * 10n ** 18n
     
-    console.log(`Balance of DAI Before depositAndBorrow: ${await dai.balanceOf(accounts[0].address)}`)
+        await dai.transfer(aaveWrapper.address, temp_debtAmount);
+        await expect(
+          aaveWrapper.connect(accounts[0]).paybackAndWithdraw(collateralToken, collateralAmount, debtToken, temp_debtAmount)
+        ).to.be.revertedWith("paybackAndWithdraw: Debt Amount sent should be grater than currentStableDebt");
+      });
+    });
 
-    console.log(`Price of DAI in ETH is`)
-    console.log((await aaveWrapper.getAssetPriceInEth(DAI)))
 
-    await aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, debtAmount, {gasLimit: 1e6});
+    describe("#success", function () {
+
+      it("should pass", async function () {
+        AaveWrapper = await ethers.getContractFactory("AaveWrapper");
+        aaveWrapper = await AaveWrapper.deploy(1)
+
+        await weth.deposit({ value: 10n * 10n ** 18n  })
+        let weth_balance = await weth.balanceOf(accounts[0].address);
+        console.log(`WETH amount before deposit: ${ethers.utils.formatEther(weth_balance)}`);
+
+        await weth.connect(accounts[0]).transfer(aaveWrapper.address, collateralAmount)
+        
+        console.log(`Balance of DAI Before depositAndBorrow: ${await dai.balanceOf(accounts[0].address)}`)
+        console.log(`Price of DAI in ETH is: ${(await aaveWrapper.getAssetPriceInEth(DAI))}`)
     
-    console.log(`Balance of DAI After depositAndBorrow: ${await dai.balanceOf(accounts[0].address)}`)
-
-    debtAmount = 150n * 10n ** 18n
-
-    await dai.transfer(aaveWrapper.address, debtAmount);
-
-    console.log(`Transferring dai for repaying, current balance of dai: ${await dai.balanceOf(accounts[0].address)}`)
-
-    await aaveWrapper.connect(accounts[0]).paybackAndWithdraw(collateralToken, collateralAmount, debtToken, debtAmount);
+        await aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, debtAmount, {gasLimit: 1e6});
+        
+        console.log(`Balance of DAI After depositAndBorrow: ${await dai.balanceOf(accounts[0].address)}`)
     
-    weth_balance = await weth.balanceOf(accounts[0].address);
-    console.log(`WETH amount after repaying: ${ethers.utils.formatEther(weth_balance)}`);
-    console.log(`Balance of DAI After depositAndBorrow: ${await dai.balanceOf(accounts[0].address)}`)
-  })
+        debtAmount = 150n * 10n ** 18n
+    
+        await dai.transfer(aaveWrapper.address, debtAmount);
+    
+        console.log(`Transferred dai for repaying, current balance of owner of dai: ${await dai.balanceOf(accounts[0].address)}`)
+    
+        await aaveWrapper.connect(accounts[0]).paybackAndWithdraw(collateralToken, collateralAmount, debtToken, debtAmount);
+        
+        weth_balance = await weth.balanceOf(accounts[0].address);
+        console.log(`WETH amount after repaying: ${ethers.utils.formatEther(weth_balance)}`);
+        console.log(`Balance of DAI After depositAndBorrow: ${await dai.balanceOf(accounts[0].address)}`)
+      })
+
+      
+    });
+
+  
 })
 
 function wei2eth(value){

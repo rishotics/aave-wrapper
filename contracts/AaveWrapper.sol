@@ -8,109 +8,224 @@ import "./interfaces/IPriceOracle.sol";
 import "./interfaces/IProtocolDataProvider.sol";
 import "hardhat/console.sol";
 
+/// @title AaveWrapper
+/// @author Rishabh
+/// @notice You can use this contract for making secure deposit, borrow, repay and withdrawl
+/// @dev All function calls are currently implemented without side effects
 contract AaveWrapper {
+    uint256 private interest_mode;
 
+    ///Mutex variable for preveting re-entrancy
+    uint256 private unlocked = 1;
+
+    address owner;
 
     address LENDING_POOL = 0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9;
     address WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address PRICE_ORACLE = 0xA50ba011c48153De246E5192C8f9258A2ba79Ca9;
     address DATA_PROVIDER = 0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d;
 
-    function getAssetPriceInEth(address asset)public view returns(uint price){
+    constructor(uint256 _interest_mode) {
+        interest_mode = _interest_mode;
+        owner = msg.sender;
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not Owner");
+        _;
+    }
+
+    /// @notice Checks whether caller is re-entering the contract
+    modifier checkReentracy() {
+        require(unlocked == 1, "SC is locked");
+        unlocked = 0;
+        _;
+        unlocked = 1;
+    }
+
+    function changeInterestMode(uint256 _interest_mode) external onlyOwner {
+        interest_mode = _interest_mode;
+    }
+
+    function getAssetPriceInEth(address asset)
+        public
+        view
+        returns (uint256 price)
+    {
         price = IPriceOracleGetter(PRICE_ORACLE).getAssetPrice(asset);
     }
 
+    /// @notice Deposit collateral Token and Borrow debt token
+    /// @param collateralToken address of collaternal token
+    /// @param collateralAmount Amount of collaternal token
+    /// @param debtToken address of debt token
+    /// @param debtAmount amount of debt token
+    function depositAndBorrow(
+        address collateralToken,
+        uint256 collateralAmount,
+        address debtToken,
+        uint256 debtAmount
+    ) external checkReentracy {
+        //check that collateral amount in SC is greater than equal to collateralAmount provided
+        require(
+            IERC20(collateralToken).balanceOf(address(this)) >=
+                collateralAmount,
+            "depositAndBorrow: Non-sufficient collateral"
+        );
 
-    function depositAndBorrow(address collateralToken, uint256 collateralAmount, address debtToken, uint256 debtAmount) external {
-        
-        require(IERC20(collateralToken).balanceOf(address(this)) >= collateralAmount, "Non-sufficient collateral");
-        
         displayUserInformation(address(this), "Before ");
 
+        //provide permission to LENDING_POOL to access collateral Token
         IERC20(collateralToken).approve(LENDING_POOL, collateralAmount);
 
         console.log("Approve done...");
-        
-        //deposit
-        ILendingPool(LENDING_POOL).deposit(collateralToken, collateralAmount, address(this), 0);
 
-        (,,uint availableBorrowsETH,) = displayUserInformation(address(this), "After Deposit ");
+        //Making a deposit
+        ILendingPool(LENDING_POOL).deposit(
+            collateralToken,
+            collateralAmount,
+            address(this),
+            0
+        );
 
-        require(availableBorrowsETH >= (debtAmount * getAssetPriceInEth(debtToken))/1 ether, "Debt Token Limit crossed");
+        (, , uint256 availableBorrowsETH, ) = displayUserInformation(
+            address(this),
+            "After Deposit "
+        );
+
+        require(
+            availableBorrowsETH >=
+                (debtAmount * getAssetPriceInEth(debtToken)) / 1 ether,
+            "depositAndBorrow: Debt Token Limit crossed"
+        );
 
         console.log("Deposit complete...");
 
-        //borrow
-        ILendingPool(LENDING_POOL).borrow(debtToken, debtAmount, 1, 0, address(this));
-        
+        //Making a borrow
+        ILendingPool(LENDING_POOL).borrow(
+            debtToken,
+            debtAmount,
+            interest_mode,
+            0,
+            address(this)
+        );
+
         console.log("Borrow complete...");
 
         displayUserInformation(address(this), "After Borrow ");
 
         _safeTransfer(debtToken, msg.sender, debtAmount);
-
     }
-    
-    function paybackAndWithdraw(address collateralToken, uint256 collateralAmount, address debtToken, uint256 debtAmount)  external {
 
-        require(IERC20(debtToken).balanceOf(address(this)) >= debtAmount, "Debt Token not sent");
-
-        (
-            uint currentATokenBalance,
-            uint currentStableDebt,
-            uint currentVariableDebt,
-            uint principalStableDebt,
-            uint scaledVariableDebt,
-            uint stableBorrowRate,
-            ,
-            ,
-        ) = IProtocolDataProvider(DATA_PROVIDER).getUserReserveData(
-            debtToken,
-            address(this)
+    /// @notice Repay debt Token and withdraw collaternal token
+    /// @param collateralToken address of collaternal token
+    /// @param collateralAmount Amount of collaternal token
+    /// @param debtToken address of debt token
+    /// @param debtAmount amount of debt token
+    function paybackAndWithdraw(
+        address collateralToken,
+        uint256 collateralAmount,
+        address debtToken,
+        uint256 debtAmount
+    ) external checkReentracy {
+        require(
+            IERC20(debtToken).balanceOf(address(this)) >= debtAmount,
+            "paybackAndWithdraw: Debt Token not sent"
         );
 
-        require(currentStableDebt <= debtAmount, "paybackAndWithdraw: Debt Amount sent should be grater than currentStableDebt");
+        (, uint256 currentStableDebt, , , , , , , ) = IProtocolDataProvider(
+            DATA_PROVIDER
+        ).getUserReserveData(debtToken, address(this));
+
+        require(
+            currentStableDebt <= debtAmount,
+            "paybackAndWithdraw: Debt Amount sent should be grater than currentStableDebt"
+        );
 
         console.log("currentStableDebt: ", currentStableDebt);
 
         IERC20(debtToken).approve(LENDING_POOL, debtAmount);
 
-        uint currDebtTokenAmount = IERC20(debtToken).balanceOf(address(this));
-        
+        uint256 currDebtTokenAmount = IERC20(debtToken).balanceOf(
+            address(this)
+        );
+
         displayUserInformation(address(this), "Before repay ");
 
         //repay
-        ILendingPool(LENDING_POOL).repay(debtToken, debtAmount, 1, address(this));
+        ILendingPool(LENDING_POOL).repay(
+            debtToken,
+            debtAmount,
+            interest_mode,
+            address(this)
+        );
 
-        uint finalDebtTokenAmount = IERC20(debtToken).balanceOf(address(this));
+        uint256 finalDebtTokenAmount = IERC20(debtToken).balanceOf(
+            address(this)
+        );
 
         displayUserInformation(address(this), "After repay ");
 
         //withdraw
-        ILendingPool(LENDING_POOL).withdraw(collateralToken, collateralAmount, address(this));
+        ILendingPool(LENDING_POOL).withdraw(
+            collateralToken,
+            collateralAmount,
+            address(this)
+        );
 
         displayUserInformation(address(this), "After withdraw ");
 
-        _safeTransfer(collateralToken, msg.sender, IWETH(collateralToken).balanceOf(address(this)));
+        _safeTransfer(
+            collateralToken,
+            msg.sender,
+            IWETH(collateralToken).balanceOf(address(this))
+        );
 
-        _safeTransfer(debtToken, msg.sender, debtAmount -  (currDebtTokenAmount-finalDebtTokenAmount));
-
+        _safeTransfer(
+            debtToken,
+            msg.sender,
+            debtAmount - (currDebtTokenAmount - finalDebtTokenAmount)
+        );
     }
 
-    function displayUserInformation(address user, string memory state)public view returns(uint, uint, uint, uint){ 
-        (uint totalCollateralETH, uint totalDebtETH, uint availableBorrowsETH, uint currentLiquidationThreshold, ,) = ILendingPool(LENDING_POOL).getUserAccountData(user);
+    function displayUserInformation(address user, string memory state)
+        public
+        view
+        returns (
+            uint256,
+            uint256,
+            uint256,
+            uint256
+        )
+    {
+        (
+            uint256 totalCollateralETH,
+            uint256 totalDebtETH,
+            uint256 availableBorrowsETH,
+            uint256 currentLiquidationThreshold,
+            ,
+
+        ) = ILendingPool(LENDING_POOL).getUserAccountData(user);
         console.log("");
         console.log(state, " totalCollateralETH", totalCollateralETH);
         console.log(state, " totalDebtETH", totalDebtETH);
         console.log(state, " availableBorrowsETH", availableBorrowsETH);
-        console.log(state, " currentLiquidationThreshold", currentLiquidationThreshold);
+        console.log(
+            state,
+            " currentLiquidationThreshold",
+            currentLiquidationThreshold
+        );
         console.log("");
-        return (totalCollateralETH, totalDebtETH, availableBorrowsETH,currentLiquidationThreshold);
+        return (
+            totalCollateralETH,
+            totalDebtETH,
+            availableBorrowsETH,
+            currentLiquidationThreshold
+        );
     }
 
-
     /**
-     * @notice private funciton to safetly transfer token 
+     * @notice private funciton to safetly transfer token
      * @param to address to
      * @param value amount
      */
@@ -128,6 +243,4 @@ contract AaveWrapper {
             "_safeTransfer: transfer failed"
         );
     }
-
-
 }
