@@ -149,12 +149,14 @@ contract AaveWrapper {
             DATA_PROVIDER
         ).getUserReserveData(debtToken, address(this));
 
+        console.log("currentStableDebt: ",currentStableDebt);
+        console.log("debtAmount: ",debtAmount);
+
+
         require(
             currentStableDebt <= debtAmount,
             "paybackAndWithdraw: Debt Amount sent should be grater than currentStableDebt"
         );
-
-        console.log("currentStableDebt: ", currentStableDebt);
 
         IERC20(debtToken).approve(LENDING_POOL, debtAmount);
 
@@ -176,7 +178,22 @@ contract AaveWrapper {
             address(this)
         );
 
-        displayUserInformation(address(this), "After repay ");
+        (uint256 totalCollateralETH, , , ) = displayUserInformation(
+            address(this),
+            "After repay "
+        );
+
+        require(
+            totalCollateralETH >=
+                (getAssetPriceInEth(collateralToken) * collateralAmount) /
+                    1 ether,
+            "paybackAndWithdraw: Collateteral asked back cannot be greater than totalCollateral deposited"
+        );
+
+        console.log(
+            "price of collateral token in wei",
+            getAssetPriceInEth(collateralToken)
+        );
 
         //withdraw
         ILendingPool(LENDING_POOL).withdraw(

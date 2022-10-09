@@ -107,6 +107,34 @@ describe("AaveWrapper", () => {
           aaveWrapper.connect(accounts[0]).paybackAndWithdraw(collateralToken, collateralAmount, debtToken, temp_debtAmount)
         ).to.be.revertedWith("paybackAndWithdraw: Debt Amount sent should be grater than currentStableDebt");
       });
+
+      it("should fail when collateral token amount is higher that allowed", async function () {
+        AaveWrapper = await ethers.getContractFactory("AaveWrapper");
+        aaveWrapper = await AaveWrapper.deploy(1)
+
+        await weth.deposit({ value: 5n * 10n ** 18n  })
+        await weth.connect(accounts[0]).transfer(aaveWrapper.address, collateralAmount)    
+        await aaveWrapper.connect(accounts[0]).depositAndBorrow(collateralToken, collateralAmount, debtToken, debtAmount, {gasLimit: 1e6});
+            
+        debtAmount = 110n * 10n ** 18n
+    
+        await dai.transfer(aaveWrapper.address, debtAmount);
+        temp_collateralAmount = 150n * 10n ** 18n
+        await expect(
+          aaveWrapper.connect(accounts[0]).paybackAndWithdraw(collateralToken, temp_collateralAmount, debtToken, debtAmount)
+        ).to.be.revertedWith("paybackAndWithdraw: Collateteral asked back cannot be greater than totalCollateral deposited");
+      });
+
+
+      it("should fail when unexpected ether is transffered", async function () {
+        AaveWrapper = await ethers.getContractFactory("AaveWrapper");
+        aaveWrapper = await AaveWrapper.deploy(1)
+        await expect(
+            accounts[1].sendTransaction({to: aaveWrapper.address, value: eth2wei("1")})
+        ).to.be.revertedWith(`UnexpectedETH("${accounts[1].address}", ${eth2wei("1")})`);
+    });
+
+
     });
 
 
